@@ -13,13 +13,14 @@ import {
   Clock,
   ShieldCheck,
   ExternalLink,
-  ArrowUpDown
+  ArrowUpDown,
+  Search,
+  Hash
 } from 'lucide-react';
 import { FileItem, GlobalConfig, FilterState, SortType } from './types';
 import { formatBytes, getExtension, getBaseName } from './utils/fileUtils';
 
 const App: React.FC = () => {
-  // Obtener la fecha actual local en formato YYYY-MM-DD
   const hoy = new Date().toLocaleDateString('en-CA'); 
 
   const [sourceHandle, setSourceHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -36,7 +37,8 @@ const App: React.FC = () => {
     dateStart: hoy, 
     dateEnd: hoy,   
     minSize: 0,
-    sort: 'name_asc'
+    sort: 'name_asc',
+    limit: ''
   });
   const [pastedNames, setPastedNames] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -44,46 +46,25 @@ const App: React.FC = () => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [pickerError, setPickerError] = useState<{title: string, msg: string} | null>(null);
 
-  // --- Operaciones del Sistema de Archivos ---
-
   const selectSource = async () => {
     setPickerError(null);
     try {
-      if (!('showDirectoryPicker' in window)) {
-        throw new Error("Navegador incompatible con File System API.");
-      }
+      if (!('showDirectoryPicker' in window)) throw new Error("Incompatible");
       const handle = await (window as any).showDirectoryPicker();
       setSourceHandle(handle);
       await scanFiles(handle);
     } catch (err: any) {
-      console.error(err);
       if (err.name === 'SecurityError' || err.message.includes('Cross origin')) {
-        setPickerError({
-          title: "Restricción de Seguridad",
-          msg: "El navegador bloquea el acceso a archivos desde un marco (iframe). Por favor, abre esta aplicación en una ventana nueva o directamente desde su URL para poder seleccionar carpetas."
-        });
-      } else if (err.name !== 'AbortError') {
-        setPickerError({
-          title: "Error de Acceso",
-          msg: err.message
-        });
+        setPickerError({ title: "Seguridad", msg: "Abre la app en pestaña nueva para acceder a archivos." });
       }
     }
   };
 
   const selectDestination = async () => {
-    setPickerError(null);
     try {
       const handle = await (window as any).showDirectoryPicker();
       setDestHandle(handle);
-    } catch (err: any) {
-      if (err.name === 'SecurityError' || err.message.includes('Cross origin')) {
-        setPickerError({
-          title: "Restricción de Seguridad",
-          msg: "No se puede abrir el selector en este entorno. Abre la app en una pestaña independiente."
-        });
-      }
-    }
+    } catch (e) {}
   };
 
   const scanFiles = async (handle: FileSystemDirectoryHandle) => {
@@ -92,9 +73,6 @@ const App: React.FC = () => {
       for await (const entry of (handle as any).values()) {
         if (entry.kind === 'file') {
           const file = await (entry as FileSystemFileHandle).getFile();
-          const ext = getExtension(file.name);
-          const base = getBaseName(file.name);
-          
           newFiles.push({
             id: crypto.randomUUID(),
             handle: entry as FileSystemFileHandle,
@@ -102,68 +80,50 @@ const App: React.FC = () => {
             size: file.size,
             lastModified: file.lastModified,
             type: file.type,
-            customBaseName: base,
-            prefix: '',
-            suffix: '',
-            extension: ext,
+            customBaseName: getBaseName(file.name),
+            prefix: '', suffix: '', extension: getExtension(file.name),
             status: 'pending'
           });
         }
       }
       setFiles(newFiles);
-    } catch (e: any) {
-      setPickerError({title: "Error de Lectura", msg: e.message});
-    }
+    } catch (e) {}
   };
-
-  // --- Lógica de Filtros y Ordenación ---
 
   const filteredFiles = useMemo(() => {
     let result = files.filter(f => {
       const matchesSearch = f.originalName.toLowerCase().includes(filters.search.toLowerCase());
-      const matchesSize = f.size >= filters.minSize * 1024;
-      
       const fileDate = new Date(f.lastModified);
       const start = filters.dateStart ? new Date(filters.dateStart + 'T00:00:00') : null;
       const end = filters.dateEnd ? new Date(filters.dateEnd + 'T23:59:59') : null;
-      
       const matchesDate = (!start || fileDate >= start) && (!end || fileDate <= end);
-      
-      return matchesSearch && matchesSize && matchesDate;
+      return matchesSearch && matchesDate;
     });
 
-    // Aplicar Ordenación
     result.sort((a, b) => {
       switch (filters.sort) {
-        case 'name_asc':
-          return a.originalName.localeCompare(b.originalName);
-        case 'name_desc':
-          return b.originalName.localeCompare(a.originalName);
-        case 'date_asc':
-          return a.lastModified - b.lastModified;
-        case 'date_desc':
-          return b.lastModified - a.lastModified;
-        case 'size_asc':
-          return a.size - b.size;
-        case 'size_desc':
-          return b.size - a.size;
-        default:
-          return 0;
+        case 'name_asc': return a.originalName.localeCompare(b.originalName);
+        case 'name_desc': return b.originalName.localeCompare(a.originalName);
+        case 'date_asc': return a.lastModified - b.lastModified;
+        case 'date_desc': return b.lastModified - a.lastModified;
+        case 'size_asc': return a.size - b.size;
+        case 'size_desc': return b.size - a.size;
+        default: return 0;
       }
     });
+
+    if (typeof filters.limit === 'number' && filters.limit > 0) {
+      result = result.slice(0, filters.limit);
+    }
 
     return result;
   }, [files, filters]);
 
-  // --- Operaciones Masivas ---
-
   const applyPastedNames = () => {
     const names = pastedNames.split('\n').filter(n => n.trim() !== '');
     setFiles(prev => prev.map((f) => {
-      const filterIdx = filteredFiles.findIndex(ff => ff.id === f.id);
-      if (filterIdx !== -1 && names[filterIdx]) {
-        return { ...f, customBaseName: names[filterIdx].trim() };
-      }
+      const idxInView = filteredFiles.findIndex(ff => ff.id === f.id);
+      if (idxInView !== -1 && names[idxInView]) return { ...f, customBaseName: names[idxInView].trim() };
       return f;
     }));
   };
@@ -180,34 +140,19 @@ const App: React.FC = () => {
     if (!destHandle) return;
     setIsProcessing(true);
     setShowConfirm(false);
-
     const updatedFiles = [...files];
-
     for (const f of filteredFiles) {
       const idx = updatedFiles.findIndex(uf => uf.id === f.id);
       updatedFiles[idx] = { ...updatedFiles[idx], status: 'processing' };
       setFiles([...updatedFiles]);
-
       try {
         const finalName = getFinalName(f);
         const sourceFile = await f.handle.getFile();
-        
-        let skip = false;
-        try {
-          await destHandle.getFileHandle(finalName, { create: false });
-          if (!globalConfig.overwrite) {
-            updatedFiles[idx] = { ...updatedFiles[idx], status: 'skipped', errorMessage: 'Ya existe' };
-            skip = true;
-          }
-        } catch (e) {}
-
-        if (!skip) {
-          const newFileHandle = await destHandle.getFileHandle(finalName, { create: true });
-          const writable = await (newFileHandle as any).createWritable();
-          await writable.write(sourceFile);
-          await writable.close();
-          updatedFiles[idx] = { ...updatedFiles[idx], status: 'success' };
-        }
+        const newFileHandle = await destHandle.getFileHandle(finalName, { create: true });
+        const writable = await (newFileHandle as any).createWritable();
+        await writable.write(sourceFile);
+        await writable.close();
+        updatedFiles[idx] = { ...updatedFiles[idx], status: 'success' };
       } catch (err: any) {
         updatedFiles[idx] = { ...updatedFiles[idx], status: 'error', errorMessage: err.message };
       }
@@ -217,306 +162,191 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-full mx-auto p-4 lg:p-4 space-y-4 font-sans bg-slate-50">
-      {/* Encabezado Compacto */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white px-5 py-3 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex items-center gap-4">
-          <div className="bg-indigo-600 p-2 rounded-lg text-white">
-            <FolderOpen className="w-6 h-6" />
-          </div>
+    <div className="flex flex-col h-screen max-w-full mx-auto p-4 lg:p-4 space-y-3 font-sans bg-slate-50">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white px-5 py-2 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600 p-1.5 rounded-lg text-white"><FolderOpen className="w-5 h-5" /></div>
           <div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">GA-Archivos</h1>
-            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Gestor Nombres Archivos</p>
+            <h1 className="text-lg font-bold text-slate-800 tracking-tight">GA-Archivos</h1>
+            <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest">Gestor Nombres Archivos</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button 
-            onClick={selectSource}
-            className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors font-semibold text-xs border border-slate-200"
-          >
-            <FolderOpen className="w-3 h-3" />
-            Origen: {sourceHandle?.name || 'Seleccionar'}
+          <button onClick={selectSource} className="flex items-center gap-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border border-slate-200 transition-colors">
+            <FolderOpen className="w-3 h-3" /> Origen: {sourceHandle?.name || '---'}
           </button>
-          <button 
-            onClick={selectDestination}
-            className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors font-semibold text-xs border border-slate-200"
-          >
-            <FolderOpen className="w-3 h-3" />
-            Destino: {destHandle?.name || 'Seleccionar'}
+          <button onClick={selectDestination} className="flex items-center gap-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border border-slate-200 transition-colors">
+            <FolderOpen className="w-3 h-3" /> Destino: {destHandle?.name || '---'}
           </button>
-          <button 
-            disabled={filteredFiles.length === 0 || !destHandle || isProcessing}
-            onClick={() => setShowConfirm(true)}
-            className="flex items-center gap-2 px-5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-lg transition-all font-bold text-xs shadow-md shadow-indigo-100"
-          >
-            <Play className="w-3 h-3" />
-            Ejecutar
+          <button disabled={filteredFiles.length === 0 || !destHandle || isProcessing} onClick={() => setShowConfirm(true)} className="flex items-center gap-2 px-4 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-lg font-bold text-xs shadow-md transition-all">
+            <Play className="w-3 h-3" /> EJECUTAR
           </button>
         </div>
       </header>
 
-      {/* Alerta de Error de Seguridad */}
-      {pickerError && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-1">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-600" />
-          <p className="text-xs font-medium flex-1">{pickerError.msg}</p>
-          <button 
-            onClick={() => window.open(window.location.href, '_blank')}
-            className="flex items-center gap-1 text-xs font-bold text-amber-700 hover:underline"
-          >
-            <ExternalLink className="w-3 h-3" /> Abrir fuera
-          </button>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 flex-1 overflow-hidden">
-        
-        {/* Controles Laterales */}
         <aside className="lg:col-span-1 space-y-4 overflow-y-auto pr-1 custom-scrollbar">
-          
           <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
-            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
-              <RefreshCw className="w-3 h-3" /> Lote
-            </h2>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="col-span-2">
+            <h2 className="text-[10px] font-black flex items-center gap-2 text-slate-400 uppercase tracking-widest border-b pb-2"><RefreshCw className="w-3 h-3" /> Configuración Global</h2>
+            <div className="space-y-2">
+              <div>
                 <label className="text-[9px] font-bold text-slate-400 uppercase">Prefijo</label>
-                <input 
-                  type="text" 
-                  value={globalConfig.prefix}
-                  onChange={e => setGlobalConfig(prev => ({...prev, prefix: e.target.value}))}
-                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                  placeholder="IMG_"
-                />
+                <input type="text" value={globalConfig.prefix} onChange={e => setGlobalConfig(prev => ({...prev, prefix: e.target.value}))} className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Prefijo..." />
               </div>
               <div>
                 <label className="text-[9px] font-bold text-slate-400 uppercase">Sufijo</label>
-                <input 
-                  type="text" 
-                  value={globalConfig.suffix}
-                  onChange={e => setGlobalConfig(prev => ({...prev, suffix: e.target.value}))}
-                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                  placeholder="_V1"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase">Ext</label>
-                <input 
-                  type="text" 
-                  value={globalConfig.extension}
-                  onChange={e => setGlobalConfig(prev => ({...prev, extension: e.target.value.replace('.', '')}))}
-                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                  placeholder="png"
-                />
+                <input type="text" value={globalConfig.suffix} onChange={e => setGlobalConfig(prev => ({...prev, suffix: e.target.value}))} className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Sufijo..." />
               </div>
             </div>
-            <label className="flex items-center gap-2 cursor-pointer border-t pt-2">
-              <input 
-                type="checkbox" 
-                checked={globalConfig.overwrite}
-                onChange={e => setGlobalConfig(prev => ({...prev, overwrite: e.target.checked}))}
-                className="w-3 h-3 rounded border-slate-300 text-indigo-600"
-              />
-              <span className="text-[11px] font-medium text-slate-600">Sobrescribir</span>
-            </label>
+            <label className="flex items-center gap-2 cursor-pointer pt-1"><input type="checkbox" checked={globalConfig.overwrite} onChange={e => setGlobalConfig(prev => ({...prev, overwrite: e.target.checked}))} className="w-3 h-3 rounded border-slate-300 text-indigo-600" /><span className="text-[11px] font-medium text-slate-600">Sobrescribir</span></label>
           </section>
 
           <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
-            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
-              <ArrowUpDown className="w-3 h-3" /> Ordenación
-            </h2>
-            <select 
-              value={filters.sort}
-              onChange={e => setFilters(prev => ({...prev, sort: e.target.value as SortType}))}
-              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700"
-            >
-              <option value="name_asc">Alfabético (A-Z)</option>
-              <option value="name_desc">Alfabético (Z-A)</option>
-              <option value="date_desc">Fecha/Hora (Reciente)</option>
-              <option value="date_asc">Fecha/Hora (Antiguo)</option>
-              <option value="size_desc">Tamaño (Mayor)</option>
-              <option value="size_asc">Tamaño (Menor)</option>
-            </select>
-            <p className="text-[9px] text-slate-400 leading-tight">Incluye precisión de minutos y segundos del sistema.</p>
+            <h2 className="text-[10px] font-black flex items-center gap-2 text-slate-400 uppercase tracking-widest border-b pb-2"><FileText className="w-3 h-3" /> Mapeo Externo</h2>
+            <textarea value={pastedNames} onChange={e => setPastedNames(e.target.value)} className="w-full h-40 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-[10px] outline-none focus:ring-1 focus:ring-indigo-500 resize-none font-mono" placeholder="Pega aquí los nombres..." />
+            <button onClick={applyPastedNames} className="w-full py-1.5 bg-slate-800 text-white rounded-lg text-[10px] font-bold hover:bg-slate-900 transition-colors uppercase">Asignar a Lista Visible</button>
           </section>
 
           <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
-            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
-              <FileText className="w-3 h-3" /> Lista
-            </h2>
-            <textarea 
-              value={pastedNames}
-              onChange={e => setPastedNames(e.target.value)}
-              className="w-full h-24 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500 resize-none font-mono"
-              placeholder="Nombre 1&#10;Nombre 2..."
-            />
-            <button 
-              onClick={applyPastedNames}
-              className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold transition-all border border-slate-200"
-            >
-              ASIGNAR NOMBRES
-            </button>
-          </section>
-
-          <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
-            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
-              <Filter className="w-3 h-3" /> Filtros
-            </h2>
-            <div className="space-y-2">
-              <input 
-                type="text" 
-                placeholder="Buscar..."
-                value={filters.search}
-                onChange={e => setFilters(prev => ({...prev, search: e.target.value}))}
-                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-              <div className="grid grid-cols-1 gap-2">
-                <div>
-                  <label className="text-[9px] font-bold text-slate-400">DESDE</label>
-                  <input 
-                    type="date" 
-                    value={filters.dateStart}
-                    onChange={e => setFilters(prev => ({...prev, dateStart: e.target.value}))}
-                    className="w-full px-1 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] font-bold text-slate-400">HASTA</label>
-                  <input 
-                    type="date" 
-                    value={filters.dateEnd}
-                    onChange={e => setFilters(prev => ({...prev, dateEnd: e.target.value}))}
-                    className="w-full px-1 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none"
-                  />
-                </div>
-              </div>
+            <h2 className="text-[10px] font-black flex items-center gap-2 text-slate-400 uppercase tracking-widest border-b pb-2"><Filter className="w-3 h-3" /> Rango Fecha</h2>
+            <div className="grid grid-cols-1 gap-2">
+              <input type="date" value={filters.dateStart} onChange={e => setFilters(prev => ({...prev, dateStart: e.target.value}))} className="w-full px-2 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none" />
+              <input type="date" value={filters.dateEnd} onChange={e => setFilters(prev => ({...prev, dateEnd: e.target.value}))} className="w-full px-2 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none" />
             </div>
           </section>
-
         </aside>
 
-        {/* Tabla Estilo Excel (Hoja de Datos) */}
         <main className="lg:col-span-4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <span className="text-xs font-bold text-slate-500">
-                DATOS: <span className="text-indigo-600 font-mono">{filteredFiles.length}</span> / {files.length}
-              </span>
+          {/* BARRA DE HERRAMIENTAS DE TABLA INTEGRADA */}
+          <div className="px-3 py-1.5 border-b border-slate-300 bg-slate-100 flex flex-wrap items-center gap-4">
+            {/* Contadores */}
+            <div className="flex items-center gap-1.5 border-r border-slate-300 pr-4 h-6">
+              <span className="text-[10px] font-black text-slate-500 uppercase">Ficheros:</span>
+              <span className="text-[11px] font-mono font-bold text-indigo-700">{filteredFiles.length}</span>
+              <span className="text-[10px] text-slate-400 font-bold">/</span>
+              <span className="text-[11px] font-mono font-medium text-slate-500">{files.length}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 text-[9px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
-                OK: {files.filter(f => f.status === 'success').length}
+
+            {/* Límite */}
+            <div className="flex items-center gap-2 border-r border-slate-300 pr-4 h-6">
+              <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1"><Hash className="w-3 h-3" /> Límite:</label>
+              <input 
+                type="number" 
+                value={filters.limit}
+                onChange={e => setFilters(prev => ({...prev, limit: e.target.value === '' ? '' : parseInt(e.target.value)}))}
+                className="w-14 px-1.5 py-0.5 text-[11px] font-bold bg-white border border-slate-300 rounded outline-none focus:ring-1 focus:ring-indigo-500 text-center"
+                placeholder="Nº"
+              />
+            </div>
+
+            {/* Ordenación */}
+            <div className="flex items-center gap-2 border-r border-slate-300 pr-4 h-6">
+              <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1"><ArrowUpDown className="w-3 h-3" /> Orden:</label>
+              <select 
+                value={filters.sort}
+                onChange={e => setFilters(prev => ({...prev, sort: e.target.value as SortType}))}
+                className="bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 px-1 py-0.5 outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="name_asc">Nombre (A-Z)</option>
+                <option value="name_desc">Nombre (Z-A)</option>
+                <option value="date_desc">Reciente</option>
+                <option value="date_asc">Antiguo</option>
+                <option value="size_desc">Tamaño (+)</option>
+                <option value="size_asc">Tamaño (-)</option>
+              </select>
+            </div>
+
+            {/* Filtro Búsqueda */}
+            <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+              <div className="relative w-full">
+                <Search className="w-3 h-3 absolute left-2 top-1.5 text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="FILTRAR POR NOMBRE..."
+                  value={filters.search}
+                  onChange={e => setFilters(prev => ({...prev, search: e.target.value}))}
+                  className="w-full pl-7 pr-2 py-0.5 bg-white border border-slate-300 rounded text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-500 uppercase tracking-tight"
+                />
               </div>
-              <div className="flex items-center gap-1 text-[9px] font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200">
-                ERROR: {files.filter(f => f.status === 'error').length}
-              </div>
+            </div>
+
+            {/* Estados de Proceso */}
+            <div className="flex items-center gap-2 border-l border-slate-300 pl-4 h-6">
+              <div className="flex items-center gap-1 text-[9px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200 uppercase">OK: {files.filter(f => f.status === 'success').length}</div>
+              <div className="flex items-center gap-1 text-[9px] font-black bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 uppercase">ERR: {files.filter(f => f.status === 'error').length}</div>
             </div>
           </div>
 
           <div className="flex-1 overflow-auto custom-scrollbar bg-slate-200">
             <table className="w-full text-left border-collapse table-fixed min-w-[900px]">
-              <thead className="sticky top-0 bg-slate-100 shadow-sm z-10">
+              <thead className="sticky top-0 bg-slate-50 shadow-sm z-10">
                 <tr className="border-b border-slate-300">
-                  <th className="w-10 border-r border-slate-200 px-2 py-2 text-[10px] font-black text-slate-400 text-center">#</th>
-                  <th className="w-1/4 border-r border-slate-200 px-3 py-2 text-[10px] font-black text-slate-500 uppercase">Nombre Original</th>
-                  <th className="w-16 border-r border-slate-200 px-1 py-2 text-[10px] font-black text-slate-500 text-center">Prefijo</th>
-                  <th className="border-r border-slate-200 px-3 py-2 text-[10px] font-black text-slate-500 uppercase">Nombre de Archivo</th>
-                  <th className="w-16 border-r border-slate-200 px-1 py-2 text-[10px] font-black text-slate-500 text-center">Sufijo</th>
-                  <th className="w-16 border-r border-slate-200 px-1 py-2 text-[10px] font-black text-slate-500 text-center">Ext</th>
-                  <th className="w-1/4 px-3 py-2 text-[10px] font-black text-slate-500 uppercase">Previsualización</th>
+                  <th className="w-10 border-r border-slate-200 px-1 py-1 text-[9px] font-black text-slate-400 text-center">#</th>
+                  <th className="w-1/4 border-r border-slate-200 px-3 py-1 text-[9px] font-black text-slate-500 uppercase">Original</th>
+                  <th className="w-16 border-r border-slate-200 px-1 py-1 text-[9px] font-black text-slate-500 text-center">P</th>
+                  <th className="border-r border-slate-200 px-3 py-1 text-[9px] font-black text-slate-500 uppercase">Base Nuevo</th>
+                  <th className="w-16 border-r border-slate-200 px-1 py-1 text-[9px] font-black text-slate-500 text-center">S</th>
+                  <th className="w-14 border-r border-slate-200 px-1 py-1 text-[9px] font-black text-slate-500 text-center">Ext</th>
+                  <th className="w-1/4 px-3 py-1 text-[9px] font-black text-slate-500 uppercase">Destino</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
                 {filteredFiles.map((f, idx) => (
-                  <tr key={f.id} className={`hover:bg-indigo-50/30 transition-colors border-b border-slate-200 ${idx % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
-                    <td className="border-r border-slate-200 px-2 py-1 text-[9px] font-mono text-slate-400 text-center">{idx + 1}</td>
-                    <td className="border-r border-slate-200 px-3 py-1">
-                      <div className="flex items-center justify-between gap-2 overflow-hidden">
-                        <span className="text-[11px] text-slate-600 truncate flex-1" title={f.originalName}>{f.originalName}</span>
-                        <div className="flex-shrink-0 flex items-center gap-1">
-                          {f.status === 'processing' && <RefreshCw className="w-2.5 h-2.5 text-indigo-500 animate-spin" />}
-                          {f.status === 'success' && <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />}
-                          {f.status === 'error' && <XCircle className="w-2.5 h-2.5 text-rose-500" />}
-                        </div>
+                  <tr key={f.id} className={`hover:bg-indigo-50/40 border-b border-slate-100 ${idx % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                    <td className="border-r border-slate-200 px-1 py-0.5 text-[8px] font-mono text-slate-400 text-center">{idx + 1}</td>
+                    <td className="border-r border-slate-200 px-3 py-0.5 overflow-hidden">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] text-slate-600 truncate flex-1 font-medium">{f.originalName}</span>
+                        {f.status !== 'pending' && (
+                          <div className="flex-shrink-0">
+                            {f.status === 'success' && <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />}
+                            {f.status === 'error' && <XCircle className="w-2.5 h-2.5 text-rose-500" />}
+                            {f.status === 'processing' && <RefreshCw className="w-2.5 h-2.5 text-indigo-500 animate-spin" />}
+                          </div>
+                        )}
                       </div>
                     </td>
-                    <td className="border-r border-slate-200 px-0 py-0">
-                      <input 
-                        type="text" 
-                        value={f.prefix}
-                        placeholder={globalConfig.prefix || ''}
-                        onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, prefix: e.target.value} : i))}
-                        className="w-full h-full px-2 py-1 text-[10px] bg-transparent focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none text-center"
-                      />
+                    <td className="border-r border-slate-200 p-0">
+                      <input type="text" value={f.prefix} placeholder={globalConfig.prefix} onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, prefix: e.target.value} : i))} className="w-full text-center text-[9px] bg-transparent focus:bg-white outline-none py-1 px-1 h-6" />
                     </td>
-                    <td className="border-r border-slate-200 px-0 py-0">
-                      <input 
-                        type="text" 
-                        value={f.customBaseName}
-                        onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, customBaseName: e.target.value} : i))}
-                        className="w-full h-full px-2 py-1 text-[11px] bg-transparent font-medium text-slate-800 focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none"
-                      />
+                    <td className="border-r border-slate-200 p-0">
+                      <input type="text" value={f.customBaseName} onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, customBaseName: e.target.value} : i))} className="w-full text-[10px] font-bold text-slate-800 bg-transparent focus:bg-white outline-none py-1 px-2 h-6" />
                     </td>
-                    <td className="border-r border-slate-200 px-0 py-0">
-                      <input 
-                        type="text" 
-                        value={f.suffix}
-                        placeholder={globalConfig.suffix || ''}
-                        onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, suffix: e.target.value} : i))}
-                        className="w-full h-full px-2 py-1 text-[10px] bg-transparent focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none text-center"
-                      />
+                    <td className="border-r border-slate-200 p-0">
+                      <input type="text" value={f.suffix} placeholder={globalConfig.suffix} onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, suffix: e.target.value} : i))} className="w-full text-center text-[9px] bg-transparent focus:bg-white outline-none py-1 px-1 h-6" />
                     </td>
-                    <td className="border-r border-slate-200 px-0 py-0">
-                      <input 
-                        type="text" 
-                        value={f.extension}
-                        placeholder={globalConfig.extension || getExtension(f.originalName)}
-                        onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, extension: e.target.value} : i))}
-                        className="w-full h-full px-2 py-1 text-[10px] bg-transparent focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none text-center"
-                      />
+                    <td className="border-r border-slate-200 p-0">
+                      <input type="text" value={f.extension} placeholder={globalConfig.extension} onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, extension: e.target.value} : i))} className="w-full text-center text-[9px] bg-transparent focus:bg-white outline-none py-1 px-1 h-6" />
                     </td>
-                    <td className="px-3 py-1 bg-slate-50/30">
-                      <span className="text-[10px] font-mono font-bold text-indigo-600 truncate block" title={getFinalName(f)}>
-                        {getFinalName(f)}
-                      </span>
+                    <td className="px-3 py-0.5 bg-slate-50/50">
+                      <span className="text-[9px] font-mono font-black text-indigo-600 truncate block" title={getFinalName(f)}>{getFinalName(f)}</span>
                     </td>
                   </tr>
                 ))}
-                {filteredFiles.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="py-20 text-center">
-                       <div className="flex flex-col items-center gap-2 text-slate-300">
-                          <Trash2 className="w-10 h-10" />
-                          <p className="text-xs font-bold uppercase">Sin archivos para mostrar</p>
-                       </div>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         </main>
       </div>
 
-      {/* Pie de página */}
-      <footer className="text-center py-2 text-[10px] text-slate-400 border-t border-slate-200 flex justify-between items-center">
-        <p>Copyright © 2024 <span className="font-bold text-slate-500">Gabriel Santos Grillo</span></p>
-        <button onClick={() => setShowPrivacy(true)} className="hover:text-indigo-600 flex items-center gap-1 transition-colors font-bold uppercase">
-          <ShieldCheck className="w-3 h-3" /> Privacidad
-        </button>
+      <footer className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-200 flex justify-between items-center bg-white rounded-lg shadow-sm">
+        <p>Copyright © 2024 <span className="font-black text-slate-500 uppercase tracking-tighter">Gabriel Santos Grillo</span></p>
+        <div className="flex gap-4">
+          <span className="text-[9px] font-mono">Precision: MM:SS Enabled</span>
+          <button onClick={() => setShowPrivacy(true)} className="hover:text-indigo-600 font-black uppercase tracking-widest flex items-center gap-1 transition-colors"><ShieldCheck className="w-3 h-3" /> Privacidad</button>
+        </div>
       </footer>
 
-      {/* Modales Compactos */}
       {showConfirm && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" /> Confirmar Ejecución
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed">Se procesarán <b>{filteredFiles.length}</b> archivos hacia la carpeta destino. ¿Deseas continuar?</p>
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-500" /> Confirmar Proceso</h3>
+            <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 font-medium">
+              Se procesarán <b className="text-indigo-600">{filteredFiles.length}</b> ficheros seleccionados hacia el destino.
+            </div>
             <div className="flex gap-2">
               <button onClick={() => setShowConfirm(false)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold transition-all">Cancelar</button>
-              <button onClick={executeBatch} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-lg shadow-indigo-200">Iniciar</button>
+              <button onClick={executeBatch} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-lg shadow-indigo-200 transition-all">Iniciar Ahora</button>
             </div>
           </div>
         </div>
@@ -524,41 +354,21 @@ const App: React.FC = () => {
 
       {showPrivacy && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-2">
-              <h3 className="text-md font-black text-slate-800 uppercase tracking-tighter">Política de Privacidad</h3>
-              <button onClick={() => setShowPrivacy(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xl">&times;</button>
-            </div>
-            <div className="space-y-3 text-[11px] text-slate-600 leading-relaxed">
-              <p><b>GA-Archivos</b> opera bajo principios de privacidad absoluta por diseño:</p>
-              <ul className="list-disc pl-5 space-y-1">
-                <li><b>Ejecución 100% Local:</b> El procesamiento ocurre en el motor V8 de tu navegador. Nada se envía a servidores.</li>
-                <li><b>Sin Telemetría:</b> No rastreamos clics, ni nombres de archivos, ni ubicaciones.</li>
-                <li><b>Seguridad del Navegador:</b> Utilizamos la File System Access API de estándar abierto.</li>
-              </ul>
-            </div>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-8 space-y-4">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest border-b pb-2">Privacidad de Datos Local</h3>
+            <p className="text-[11px] text-slate-600 leading-relaxed italic">Esta herramienta procesa los archivos íntegramente en tu navegador. Los nombres, rutas y contenidos nunca abandonan tu ordenador ni se envían a ningún servidor externo. Gabriel Santos Grillo no tiene acceso a tus datos.</p>
             <button onClick={() => setShowPrivacy(false)} className="w-full py-2 bg-slate-100 rounded-lg font-bold text-xs">CERRAR</button>
           </div>
         </div>
       )}
 
-      {/* Barra de Progreso Discreta */}
       {isProcessing && (
-        <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border border-slate-200 z-40 w-64 animate-in slide-in-from-bottom-5">
+        <div className="fixed bottom-14 right-8 bg-white p-4 rounded-xl shadow-2xl border border-slate-200 z-40 w-64">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <Clock className="w-3 h-3 text-indigo-500 animate-spin" /> Procesando
-            </h4>
-            <span className="text-[10px] font-mono font-bold text-indigo-600">
-              {files.filter(f => f.status !== 'pending' && f.status !== 'processing').length}/{filteredFiles.length}
-            </span>
+            <h4 className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-2"><Clock className="w-3 h-3 text-indigo-500 animate-spin" /> Procesando Lote</h4>
+            <span className="text-[10px] font-mono font-bold text-indigo-600">{files.filter(f => f.status === 'success' || f.status === 'error').length}/{filteredFiles.length}</span>
           </div>
-          <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-            <div 
-              className="bg-indigo-500 h-full transition-all duration-300" 
-              style={{ width: `${(files.filter(f => f.status !== 'pending' && f.status !== 'processing').length / filteredFiles.length) * 100}%` }}
-            />
-          </div>
+          <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden"><div className="bg-indigo-500 h-full transition-all" style={{ width: `${(files.filter(f => f.status === 'success' || f.status === 'error').length / filteredFiles.length) * 100}%` }} /></div>
         </div>
       )}
 
@@ -566,14 +376,7 @@ const App: React.FC = () => {
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
-        /* Eliminar flechas de inputs de fecha */
-        input[type="date"]::-webkit-inner-spin-button,
-        input[type="date"]::-webkit-calendar-picker-indicator {
-          cursor: pointer;
-          filter: opacity(0.5);
-        }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 1; }
       `}</style>
     </div>
   );

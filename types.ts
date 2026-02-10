@@ -32,4 +32,5 @@ export interface FilterState {
   dateEnd: string;
   minSize: number; // en KB
   sort: SortType;
+  limit: number | ''; // Campo para limitar ficheros a tratar
 }
