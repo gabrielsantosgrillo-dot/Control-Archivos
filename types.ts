@@ -1,4 +1,6 @@
 
+export type SortType = 'name_asc' | 'name_desc' | 'date_asc' | 'date_desc' | 'size_asc' | 'size_desc';
+
 export interface FileItem {
   id: string;
   handle: FileSystemFileHandle;
@@ -29,4 +31,5 @@ export interface FilterState {
   dateStart: string;
   dateEnd: string;
   minSize: number; // en KB
+  sort: SortType;
 }

@@ -12,9 +12,10 @@ import {
   XCircle,
   Clock,
   ShieldCheck,
-  ExternalLink
+  ExternalLink,
+  ArrowUpDown
 } from 'lucide-react';
-import { FileItem, GlobalConfig, FilterState } from './types';
+import { FileItem, GlobalConfig, FilterState, SortType } from './types';
 import { formatBytes, getExtension, getBaseName } from './utils/fileUtils';
 
 const App: React.FC = () => {
@@ -34,7 +35,8 @@ const App: React.FC = () => {
     search: '',
     dateStart: hoy, 
     dateEnd: hoy,   
-    minSize: 0
+    minSize: 0,
+    sort: 'name_asc'
   });
   const [pastedNames, setPastedNames] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -114,10 +116,10 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Lógica de Filtros ---
+  // --- Lógica de Filtros y Ordenación ---
 
   const filteredFiles = useMemo(() => {
-    return files.filter(f => {
+    let result = files.filter(f => {
       const matchesSearch = f.originalName.toLowerCase().includes(filters.search.toLowerCase());
       const matchesSize = f.size >= filters.minSize * 1024;
       
@@ -129,6 +131,28 @@ const App: React.FC = () => {
       
       return matchesSearch && matchesSize && matchesDate;
     });
+
+    // Aplicar Ordenación
+    result.sort((a, b) => {
+      switch (filters.sort) {
+        case 'name_asc':
+          return a.originalName.localeCompare(b.originalName);
+        case 'name_desc':
+          return b.originalName.localeCompare(a.originalName);
+        case 'date_asc':
+          return a.lastModified - b.lastModified;
+        case 'date_desc':
+          return b.lastModified - a.lastModified;
+        case 'size_asc':
+          return a.size - b.size;
+        case 'size_desc':
+          return b.size - a.size;
+        default:
+          return 0;
+      }
+    });
+
+    return result;
   }, [files, filters]);
 
   // --- Operaciones Masivas ---
@@ -193,169 +217,176 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-7xl mx-auto p-4 lg:p-6 space-y-6 font-sans">
-      {/* Encabezado */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <div>
-          <h1 className="text-2xl font-bold text-indigo-600 flex items-center gap-2">
-            <FolderOpen className="w-8 h-8" />
-            GA-Archivos
-          </h1>
-          <p className="text-slate-500 text-sm font-medium">Gestor Nombres Archivos</p>
+    <div className="flex flex-col h-screen max-w-full mx-auto p-4 lg:p-4 space-y-4 font-sans bg-slate-50">
+      {/* Encabezado Compacto */}
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white px-5 py-3 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-4">
+          <div className="bg-indigo-600 p-2 rounded-lg text-white">
+            <FolderOpen className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-800 tracking-tight">GA-Archivos</h1>
+            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Gestor Nombres Archivos</p>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button 
             onClick={selectSource}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors font-medium text-sm"
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors font-semibold text-xs border border-slate-200"
           >
-            <FolderOpen className="w-4 h-4" />
-            Origen: {sourceHandle?.name || 'No Seleccionado'}
+            <FolderOpen className="w-3 h-3" />
+            Origen: {sourceHandle?.name || 'Seleccionar'}
           </button>
           <button 
             onClick={selectDestination}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors font-medium text-sm"
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors font-semibold text-xs border border-slate-200"
           >
-            <FolderOpen className="w-4 h-4" />
-            Destino: {destHandle?.name || 'No Seleccionado'}
+            <FolderOpen className="w-3 h-3" />
+            Destino: {destHandle?.name || 'Seleccionar'}
           </button>
           <button 
             disabled={filteredFiles.length === 0 || !destHandle || isProcessing}
             onClick={() => setShowConfirm(true)}
-            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-lg transition-all font-bold shadow-lg shadow-indigo-100"
+            className="flex items-center gap-2 px-5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-lg transition-all font-bold text-xs shadow-md shadow-indigo-100"
           >
-            <Play className="w-4 h-4" />
-            Iniciar Ejecución
+            <Play className="w-3 h-3" />
+            Ejecutar
           </button>
         </div>
       </header>
 
-      {/* Alerta de Error de Seguridad / Selector */}
+      {/* Alerta de Error de Seguridad */}
       {pickerError && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-5 py-4 rounded-2xl flex items-start gap-4 animate-in fade-in slide-in-from-top-2">
-          <AlertTriangle className="w-6 h-6 mt-0.5 flex-shrink-0 text-amber-600" />
-          <div className="text-sm space-y-2">
-            <p className="font-bold text-base">{pickerError.title}</p>
-            <p className="leading-relaxed">{pickerError.msg}</p>
-            {pickerError.title === "Restricción de Seguridad" && (
-              <div className="pt-2">
-                 <button 
-                  onClick={() => window.open(window.location.href, '_blank')}
-                  className="flex items-center gap-2 px-4 py-1.5 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 transition-colors"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Abrir en pestaña nueva
-                </button>
-              </div>
-            )}
-          </div>
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-1">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-600" />
+          <p className="text-xs font-medium flex-1">{pickerError.msg}</p>
+          <button 
+            onClick={() => window.open(window.location.href, '_blank')}
+            className="flex items-center gap-1 text-xs font-bold text-amber-700 hover:underline"
+          >
+            <ExternalLink className="w-3 h-3" /> Abrir fuera
+          </button>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 flex-1 overflow-hidden">
         
         {/* Controles Laterales */}
-        <aside className="lg:col-span-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+        <aside className="lg:col-span-1 space-y-4 overflow-y-auto pr-1 custom-scrollbar">
           
-          {/* Configuración por Lote en una sola línea */}
-          <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-            <h2 className="font-bold flex items-center gap-2 text-slate-800">
-              <RefreshCw className="w-4 h-4 text-indigo-500" />
-              Configuración por Lote
+          <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
+              <RefreshCw className="w-3 h-3" /> Lote
             </h2>
-            <div className="flex flex-wrap gap-2 items-end">
-              <div className="flex-1 min-w-[50px]">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Prefijo</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <label className="text-[9px] font-bold text-slate-400 uppercase">Prefijo</label>
                 <input 
                   type="text" 
                   value={globalConfig.prefix}
                   onChange={e => setGlobalConfig(prev => ({...prev, prefix: e.target.value}))}
-                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="ej. IMG_"
+                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="IMG_"
                 />
               </div>
-              <div className="flex-1 min-w-[50px]">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Sufijo</label>
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase">Sufijo</label>
                 <input 
                   type="text" 
                   value={globalConfig.suffix}
                   onChange={e => setGlobalConfig(prev => ({...prev, suffix: e.target.value}))}
-                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="ej. _2024"
+                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="_V1"
                 />
               </div>
-              <div className="w-16">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Ext</label>
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase">Ext</label>
                 <input 
                   type="text" 
                   value={globalConfig.extension}
                   onChange={e => setGlobalConfig(prev => ({...prev, extension: e.target.value.replace('.', '')}))}
-                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="jpg"
+                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="png"
                 />
               </div>
             </div>
-            <label className="flex items-center gap-2 cursor-pointer group border-t pt-3">
+            <label className="flex items-center gap-2 cursor-pointer border-t pt-2">
               <input 
                 type="checkbox" 
                 checked={globalConfig.overwrite}
                 onChange={e => setGlobalConfig(prev => ({...prev, overwrite: e.target.checked}))}
-                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                className="w-3 h-3 rounded border-slate-300 text-indigo-600"
               />
-              <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Permitir Sobrescribir</span>
+              <span className="text-[11px] font-medium text-slate-600">Sobrescribir</span>
             </label>
           </section>
 
-          {/* Mapeador de Lista */}
-          <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-            <h2 className="font-bold flex items-center gap-2 text-slate-800">
-              <FileText className="w-4 h-4 text-indigo-500" />
-              Mapeador de Lista
+          <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
+              <ArrowUpDown className="w-3 h-3" /> Ordenación
+            </h2>
+            <select 
+              value={filters.sort}
+              onChange={e => setFilters(prev => ({...prev, sort: e.target.value as SortType}))}
+              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700"
+            >
+              <option value="name_asc">Alfabético (A-Z)</option>
+              <option value="name_desc">Alfabético (Z-A)</option>
+              <option value="date_desc">Fecha/Hora (Reciente)</option>
+              <option value="date_asc">Fecha/Hora (Antiguo)</option>
+              <option value="size_desc">Tamaño (Mayor)</option>
+              <option value="size_asc">Tamaño (Menor)</option>
+            </select>
+            <p className="text-[9px] text-slate-400 leading-tight">Incluye precisión de minutos y segundos del sistema.</p>
+          </section>
+
+          <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
+              <FileText className="w-3 h-3" /> Lista
             </h2>
             <textarea 
               value={pastedNames}
               onChange={e => setPastedNames(e.target.value)}
-              className="w-full h-32 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none font-mono"
+              className="w-full h-24 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500 resize-none font-mono"
               placeholder="Nombre 1&#10;Nombre 2..."
             />
             <button 
               onClick={applyPastedNames}
-              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all border border-slate-200"
+              className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold transition-all border border-slate-200"
             >
-              Asignar Nombres a la Lista
+              ASIGNAR NOMBRES
             </button>
           </section>
 
-          {/* Filtros */}
-          <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-            <h2 className="font-bold flex items-center gap-2 text-slate-800">
-              <Filter className="w-4 h-4 text-indigo-500" />
-              Filtros
+          <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+            <h2 className="text-xs font-bold flex items-center gap-2 text-slate-500 uppercase tracking-widest">
+              <Filter className="w-3 h-3" /> Filtros
             </h2>
-            <div className="space-y-3">
+            <div className="space-y-2">
               <input 
                 type="text" 
-                placeholder="Buscar por nombre..."
+                placeholder="Buscar..."
                 value={filters.search}
                 onChange={e => setFilters(prev => ({...prev, search: e.target.value}))}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
               />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400">Desde</label>
+                  <label className="text-[9px] font-bold text-slate-400">DESDE</label>
                   <input 
                     type="date" 
                     value={filters.dateStart}
                     onChange={e => setFilters(prev => ({...prev, dateStart: e.target.value}))}
-                    className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded outline-none"
+                    className="w-full px-1 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400">Hasta</label>
+                  <label className="text-[9px] font-bold text-slate-400">HASTA</label>
                   <input 
                     type="date" 
                     value={filters.dateEnd}
                     onChange={e => setFilters(prev => ({...prev, dateEnd: e.target.value}))}
-                    className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded outline-none"
+                    className="w-full px-1 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none"
                   />
                 </div>
               </div>
@@ -364,86 +395,88 @@ const App: React.FC = () => {
 
         </aside>
 
-        {/* Tabla de Archivos */}
-        <main className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-            <span className="text-sm font-semibold text-slate-600">
-              Mostrando: <span className="text-indigo-600">{filteredFiles.length}</span> / {files.length}
-            </span>
+        {/* Tabla Estilo Excel (Hoja de Datos) */}
+        <main className="lg:col-span-4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+          <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-bold text-slate-500">
+                DATOS: <span className="text-indigo-600 font-mono">{filteredFiles.length}</span> / {files.length}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                <CheckCircle className="w-2 h-2" /> {files.filter(f => f.status === 'success').length} OK
-              </span>
-              <span className="flex items-center gap-1 text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                <XCircle className="w-2 h-2" /> {files.filter(f => f.status === 'error').length} FAIL
-              </span>
+              <div className="flex items-center gap-1 text-[9px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
+                OK: {files.filter(f => f.status === 'success').length}
+              </div>
+              <div className="flex items-center gap-1 text-[9px] font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded border border-rose-200">
+                ERROR: {files.filter(f => f.status === 'error').length}
+              </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto custom-scrollbar">
-            <table className="w-full text-left border-collapse min-w-[800px]">
-              <thead className="sticky top-0 bg-white shadow-sm z-10 border-b border-slate-100">
-                <tr>
-                  <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-1/4">Original</th>
-                  <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center w-12">P</th>
-                  <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nombre Nuevo</th>
-                  <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center w-12">S</th>
-                  <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center w-16">Ext</th>
-                  <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Previsualización</th>
+          <div className="flex-1 overflow-auto custom-scrollbar bg-slate-200">
+            <table className="w-full text-left border-collapse table-fixed min-w-[900px]">
+              <thead className="sticky top-0 bg-slate-100 shadow-sm z-10">
+                <tr className="border-b border-slate-300">
+                  <th className="w-10 border-r border-slate-200 px-2 py-2 text-[10px] font-black text-slate-400 text-center">#</th>
+                  <th className="w-1/4 border-r border-slate-200 px-3 py-2 text-[10px] font-black text-slate-500 uppercase">Nombre Original</th>
+                  <th className="w-16 border-r border-slate-200 px-1 py-2 text-[10px] font-black text-slate-500 text-center">Prefijo</th>
+                  <th className="border-r border-slate-200 px-3 py-2 text-[10px] font-black text-slate-500 uppercase">Nombre de Archivo</th>
+                  <th className="w-16 border-r border-slate-200 px-1 py-2 text-[10px] font-black text-slate-500 text-center">Sufijo</th>
+                  <th className="w-16 border-r border-slate-200 px-1 py-2 text-[10px] font-black text-slate-500 text-center">Ext</th>
+                  <th className="w-1/4 px-3 py-2 text-[10px] font-black text-slate-500 uppercase">Previsualización</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filteredFiles.map(f => (
-                  <tr key={f.id} className="group hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-slate-900 truncate max-w-[180px]" title={f.originalName}>{f.originalName}</span>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[9px] text-slate-400 font-mono">{formatBytes(f.size)}</span>
-                          {f.status === 'processing' && <RefreshCw className="w-3 h-3 text-indigo-500 animate-spin" />}
-                          {f.status === 'success' && <CheckCircle className="w-3 h-3 text-emerald-500" />}
-                          {f.status === 'error' && <XCircle className="w-3 h-3 text-rose-500" title={f.errorMessage} />}
-                          {f.status === 'skipped' && <AlertTriangle className="w-3 h-3 text-amber-500" title={f.errorMessage} />}
+              <tbody className="bg-white">
+                {filteredFiles.map((f, idx) => (
+                  <tr key={f.id} className={`hover:bg-indigo-50/30 transition-colors border-b border-slate-200 ${idx % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
+                    <td className="border-r border-slate-200 px-2 py-1 text-[9px] font-mono text-slate-400 text-center">{idx + 1}</td>
+                    <td className="border-r border-slate-200 px-3 py-1">
+                      <div className="flex items-center justify-between gap-2 overflow-hidden">
+                        <span className="text-[11px] text-slate-600 truncate flex-1" title={f.originalName}>{f.originalName}</span>
+                        <div className="flex-shrink-0 flex items-center gap-1">
+                          {f.status === 'processing' && <RefreshCw className="w-2.5 h-2.5 text-indigo-500 animate-spin" />}
+                          {f.status === 'success' && <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />}
+                          {f.status === 'error' && <XCircle className="w-2.5 h-2.5 text-rose-500" />}
                         </div>
                       </div>
                     </td>
-                    <td className="px-1 py-4">
+                    <td className="border-r border-slate-200 px-0 py-0">
                       <input 
                         type="text" 
                         value={f.prefix}
-                        placeholder={globalConfig.prefix || '-'}
+                        placeholder={globalConfig.prefix || ''}
                         onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, prefix: e.target.value} : i))}
-                        className="w-full px-1 py-1 text-[10px] bg-slate-50/50 border border-transparent group-hover:border-slate-200 rounded text-center focus:bg-white outline-none"
+                        className="w-full h-full px-2 py-1 text-[10px] bg-transparent focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none text-center"
                       />
                     </td>
-                    <td className="px-2 py-4">
+                    <td className="border-r border-slate-200 px-0 py-0">
                       <input 
                         type="text" 
                         value={f.customBaseName}
                         onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, customBaseName: e.target.value} : i))}
-                        className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded font-medium text-indigo-700 outline-none"
+                        className="w-full h-full px-2 py-1 text-[11px] bg-transparent font-medium text-slate-800 focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none"
                       />
                     </td>
-                    <td className="px-1 py-4">
+                    <td className="border-r border-slate-200 px-0 py-0">
                       <input 
                         type="text" 
                         value={f.suffix}
-                        placeholder={globalConfig.suffix || '-'}
+                        placeholder={globalConfig.suffix || ''}
                         onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, suffix: e.target.value} : i))}
-                        className="w-full px-1 py-1 text-[10px] bg-slate-50/50 border border-transparent group-hover:border-slate-200 rounded text-center focus:bg-white outline-none"
+                        className="w-full h-full px-2 py-1 text-[10px] bg-transparent focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none text-center"
                       />
                     </td>
-                    <td className="px-1 py-4">
+                    <td className="border-r border-slate-200 px-0 py-0">
                       <input 
                         type="text" 
                         value={f.extension}
                         placeholder={globalConfig.extension || getExtension(f.originalName)}
                         onChange={e => setFiles(prev => prev.map(i => i.id === f.id ? {...i, extension: e.target.value} : i))}
-                        className="w-full px-1 py-1 text-[10px] bg-slate-50/50 border border-transparent group-hover:border-slate-200 rounded text-center focus:bg-white outline-none"
+                        className="w-full h-full px-2 py-1 text-[10px] bg-transparent focus:bg-white focus:ring-1 focus:ring-inset focus:ring-indigo-500 outline-none text-center"
                       />
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded truncate block max-w-[240px]" title={getFinalName(f)}>
+                    <td className="px-3 py-1 bg-slate-50/30">
+                      <span className="text-[10px] font-mono font-bold text-indigo-600 truncate block" title={getFinalName(f)}>
                         {getFinalName(f)}
                       </span>
                     </td>
@@ -451,11 +484,11 @@ const App: React.FC = () => {
                 ))}
                 {filteredFiles.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-24 text-center text-slate-400">
-                      <div className="flex flex-col items-center gap-4">
-                        <Trash2 className="w-12 h-12 text-slate-200" />
-                        <p className="text-sm">No hay archivos para mostrar.</p>
-                      </div>
+                    <td colSpan={7} className="py-20 text-center">
+                       <div className="flex flex-col items-center gap-2 text-slate-300">
+                          <Trash2 className="w-10 h-10" />
+                          <p className="text-xs font-bold uppercase">Sin archivos para mostrar</p>
+                       </div>
                     </td>
                   </tr>
                 )}
@@ -466,65 +499,61 @@ const App: React.FC = () => {
       </div>
 
       {/* Pie de página */}
-      <footer className="text-center py-4 text-slate-400 text-xs space-y-2 border-t mt-4">
-        <p>Creado por <span className="font-bold text-slate-600">Gabriel Santos Grillo</span></p>
-        <button onClick={() => setShowPrivacy(true)} className="hover:text-indigo-500 flex items-center justify-center gap-1 mx-auto transition-colors">
-          <ShieldCheck className="w-3 h-3" /> Política de Privacidad
+      <footer className="text-center py-2 text-[10px] text-slate-400 border-t border-slate-200 flex justify-between items-center">
+        <p>Copyright © 2024 <span className="font-bold text-slate-500">Gabriel Santos Grillo</span></p>
+        <button onClick={() => setShowPrivacy(true)} className="hover:text-indigo-600 flex items-center gap-1 transition-colors font-bold uppercase">
+          <ShieldCheck className="w-3 h-3" /> Privacidad
         </button>
       </footer>
 
-      {/* Modales */}
+      {/* Modales Compactos */}
       {showConfirm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 space-y-6">
-            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <AlertTriangle className="w-6 h-6 text-amber-500" /> Confirmar Proceso
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" /> Confirmar Ejecución
             </h3>
-            <div className="bg-slate-50 p-4 rounded-xl text-sm space-y-2 text-slate-600">
-              <p>Archivos a procesar: <span className="font-bold">{filteredFiles.length}</span></p>
-              <p>Carpeta destino: <span className="font-mono text-xs">{destHandle?.name}</span></p>
-              <p>Sobrescribir: <span className={globalConfig.overwrite ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>{globalConfig.overwrite ? 'SÍ' : 'NO'}</span></p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowConfirm(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">Cancelar</button>
-              <button onClick={executeBatch} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold">Iniciar</button>
+            <p className="text-xs text-slate-600 leading-relaxed">Se procesarán <b>{filteredFiles.length}</b> archivos hacia la carpeta destino. ¿Deseas continuar?</p>
+            <div className="flex gap-2">
+              <button onClick={() => setShowConfirm(false)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold transition-all">Cancelar</button>
+              <button onClick={executeBatch} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-lg shadow-indigo-200">Iniciar</button>
             </div>
           </div>
         </div>
       )}
 
       {showPrivacy && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-8 space-y-6 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-4">
-              <h3 className="text-xl font-bold text-slate-900">Política de Privacidad</h3>
-              <button onClick={() => setShowPrivacy(false)} className="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-2">
+              <h3 className="text-md font-black text-slate-800 uppercase tracking-tighter">Política de Privacidad</h3>
+              <button onClick={() => setShowPrivacy(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xl">&times;</button>
             </div>
-            <div className="space-y-4 text-slate-600 text-sm leading-relaxed">
-              <p>GA-Archivos garantiza la privacidad absoluta de tus datos:</p>
-              <ul className="list-disc pl-5 space-y-2">
-                <li><strong>Procesamiento Local:</strong> Los archivos no se suben a ningún servidor. Todo ocurre en tu navegador.</li>
-                <li><strong>Sin Rastreo:</strong> No recopilamos información personal ni estadísticas de uso.</li>
-                <li><strong>Acceso Temporal:</strong> Los permisos de acceso a carpetas son temporales y caducan al cerrar la pestaña.</li>
+            <div className="space-y-3 text-[11px] text-slate-600 leading-relaxed">
+              <p><b>GA-Archivos</b> opera bajo principios de privacidad absoluta por diseño:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li><b>Ejecución 100% Local:</b> El procesamiento ocurre en el motor V8 de tu navegador. Nada se envía a servidores.</li>
+                <li><b>Sin Telemetría:</b> No rastreamos clics, ni nombres de archivos, ni ubicaciones.</li>
+                <li><b>Seguridad del Navegador:</b> Utilizamos la File System Access API de estándar abierto.</li>
               </ul>
             </div>
-            <button onClick={() => setShowPrivacy(false)} className="w-full py-3 bg-slate-100 rounded-xl font-bold">Entendido</button>
+            <button onClick={() => setShowPrivacy(false)} className="w-full py-2 bg-slate-100 rounded-lg font-bold text-xs">CERRAR</button>
           </div>
         </div>
       )}
 
-      {/* Indicador de Progreso */}
+      {/* Barra de Progreso Discreta */}
       {isProcessing && (
-        <div className="fixed bottom-8 right-8 bg-white p-6 rounded-2xl shadow-2xl border border-slate-200 z-40 w-80 animate-in slide-in-from-bottom-10">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold text-slate-900 flex items-center gap-2 italic">
-              <Clock className="w-4 h-4 text-indigo-500 animate-spin" /> Procesando...
+        <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border border-slate-200 z-40 w-64 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <Clock className="w-3 h-3 text-indigo-500 animate-spin" /> Procesando
             </h4>
-            <span className="text-xs font-mono font-bold text-indigo-600">
-              {files.filter(f => f.status !== 'pending' && f.status !== 'processing').length} / {filteredFiles.length}
+            <span className="text-[10px] font-mono font-bold text-indigo-600">
+              {files.filter(f => f.status !== 'pending' && f.status !== 'processing').length}/{filteredFiles.length}
             </span>
           </div>
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
             <div 
               className="bg-indigo-500 h-full transition-all duration-300" 
               style={{ width: `${(files.filter(f => f.status !== 'pending' && f.status !== 'processing').length / filteredFiles.length) * 100}%` }}
@@ -534,9 +563,17 @@ const App: React.FC = () => {
       )}
 
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Eliminar flechas de inputs de fecha */
+        input[type="date"]::-webkit-inner-spin-button,
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          cursor: pointer;
+          filter: opacity(0.5);
+        }
       `}</style>
     </div>
   );
