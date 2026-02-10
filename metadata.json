@@ -1,0 +1,5 @@
+{
+  "name": "GA-Archivos",
+  "description": "Utilidad de gestión y renombrado masivo de archivos con filtrado avanzado y mapeo de nombres semi-automático.",
+  "requestFramePermissions": []
+}
