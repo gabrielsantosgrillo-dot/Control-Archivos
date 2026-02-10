@@ -15,7 +15,8 @@ import {
   ExternalLink,
   ArrowUpDown,
   Search,
-  Hash
+  Hash,
+  Calendar
 } from 'lucide-react';
 import { FileItem, GlobalConfig, FilterState, SortType } from './types';
 import { formatBytes, getExtension, getBaseName } from './utils/fileUtils';
@@ -203,52 +204,44 @@ const App: React.FC = () => {
 
           <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
             <h2 className="text-[10px] font-black flex items-center gap-2 text-slate-400 uppercase tracking-widest border-b pb-2"><FileText className="w-3 h-3" /> Mapeo Externo</h2>
-            <textarea value={pastedNames} onChange={e => setPastedNames(e.target.value)} className="w-full h-40 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-[10px] outline-none focus:ring-1 focus:ring-indigo-500 resize-none font-mono" placeholder="Pega aquí los nombres..." />
+            <textarea value={pastedNames} onChange={e => setPastedNames(e.target.value)} className="w-full h-60 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-[10px] outline-none focus:ring-1 focus:ring-indigo-500 resize-none font-mono" placeholder="Pega aquí los nombres..." />
             <button onClick={applyPastedNames} className="w-full py-1.5 bg-slate-800 text-white rounded-lg text-[10px] font-bold hover:bg-slate-900 transition-colors uppercase">Asignar a Lista Visible</button>
-          </section>
-
-          <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
-            <h2 className="text-[10px] font-black flex items-center gap-2 text-slate-400 uppercase tracking-widest border-b pb-2"><Filter className="w-3 h-3" /> Rango Fecha</h2>
-            <div className="grid grid-cols-1 gap-2">
-              <input type="date" value={filters.dateStart} onChange={e => setFilters(prev => ({...prev, dateStart: e.target.value}))} className="w-full px-2 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none" />
-              <input type="date" value={filters.dateEnd} onChange={e => setFilters(prev => ({...prev, dateEnd: e.target.value}))} className="w-full px-2 py-1 text-[10px] bg-slate-50 border border-slate-200 rounded outline-none" />
-            </div>
           </section>
         </aside>
 
         <main className="lg:col-span-4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          {/* BARRA DE HERRAMIENTAS DE TABLA INTEGRADA */}
-          <div className="px-3 py-1.5 border-b border-slate-300 bg-slate-100 flex flex-wrap items-center gap-4">
+          {/* BARRA DE HERRAMIENTAS DE TABLA INTEGRADA - POTENCIADA */}
+          <div className="px-3 py-1.5 border-b border-slate-300 bg-slate-100 flex flex-wrap items-center gap-3">
             {/* Contadores */}
-            <div className="flex items-center gap-1.5 border-r border-slate-300 pr-4 h-6">
-              <span className="text-[10px] font-black text-slate-500 uppercase">Ficheros:</span>
-              <span className="text-[11px] font-mono font-bold text-indigo-700">{filteredFiles.length}</span>
-              <span className="text-[10px] text-slate-400 font-bold">/</span>
-              <span className="text-[11px] font-mono font-medium text-slate-500">{files.length}</span>
+            <div className="flex items-center gap-1 border-r border-slate-300 pr-3 h-6">
+              <span className="text-[9px] font-black text-slate-400 uppercase">Ficheros:</span>
+              <span className="text-[11px] font-mono font-bold text-indigo-700 leading-none">{filteredFiles.length}</span>
+              <span className="text-[10px] text-slate-300 font-bold">/</span>
+              <span className="text-[11px] font-mono font-medium text-slate-400 leading-none">{files.length}</span>
             </div>
 
             {/* Límite */}
-            <div className="flex items-center gap-2 border-r border-slate-300 pr-4 h-6">
-              <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1"><Hash className="w-3 h-3" /> Límite:</label>
+            <div className="flex items-center gap-2 border-r border-slate-300 pr-3 h-6">
+              <label className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><Hash className="w-3 h-3" /> Límite:</label>
               <input 
                 type="number" 
                 value={filters.limit}
                 onChange={e => setFilters(prev => ({...prev, limit: e.target.value === '' ? '' : parseInt(e.target.value)}))}
-                className="w-14 px-1.5 py-0.5 text-[11px] font-bold bg-white border border-slate-300 rounded outline-none focus:ring-1 focus:ring-indigo-500 text-center"
+                className="w-12 px-1 py-0.5 text-[11px] font-bold bg-white border border-slate-300 rounded outline-none focus:ring-1 focus:ring-indigo-500 text-center"
                 placeholder="Nº"
               />
             </div>
 
             {/* Ordenación */}
-            <div className="flex items-center gap-2 border-r border-slate-300 pr-4 h-6">
-              <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1"><ArrowUpDown className="w-3 h-3" /> Orden:</label>
+            <div className="flex items-center gap-2 border-r border-slate-300 pr-3 h-6">
+              <label className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><ArrowUpDown className="w-3 h-3" /> Orden:</label>
               <select 
                 value={filters.sort}
                 onChange={e => setFilters(prev => ({...prev, sort: e.target.value as SortType}))}
                 className="bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 px-1 py-0.5 outline-none focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="name_asc">Nombre (A-Z)</option>
-                <option value="name_desc">Nombre (Z-A)</option>
+                <option value="name_asc">A-Z</option>
+                <option value="name_desc">Z-A</option>
                 <option value="date_desc">Reciente</option>
                 <option value="date_asc">Antiguo</option>
                 <option value="size_desc">Tamaño (+)</option>
@@ -256,13 +249,33 @@ const App: React.FC = () => {
               </select>
             </div>
 
+            {/* Rango de Fechas Integrado */}
+            <div className="flex items-center gap-2 border-r border-slate-300 pr-3 h-6">
+              <label className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><Calendar className="w-3 h-3" /> Fecha:</label>
+              <div className="flex items-center bg-white border border-slate-300 rounded overflow-hidden">
+                <input 
+                  type="date" 
+                  value={filters.dateStart} 
+                  onChange={e => setFilters(prev => ({...prev, dateStart: e.target.value}))} 
+                  className="px-1 py-0.5 text-[10px] font-bold text-slate-600 outline-none w-24" 
+                />
+                <span className="text-[10px] text-slate-300 font-bold px-1">/</span>
+                <input 
+                  type="date" 
+                  value={filters.dateEnd} 
+                  onChange={e => setFilters(prev => ({...prev, dateEnd: e.target.value}))} 
+                  className="px-1 py-0.5 text-[10px] font-bold text-slate-600 outline-none w-24" 
+                />
+              </div>
+            </div>
+
             {/* Filtro Búsqueda */}
-            <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+            <div className="flex items-center gap-2 flex-1 min-w-[120px]">
               <div className="relative w-full">
                 <Search className="w-3 h-3 absolute left-2 top-1.5 text-slate-400" />
                 <input 
                   type="text" 
-                  placeholder="FILTRAR POR NOMBRE..."
+                  placeholder="FILTRAR..."
                   value={filters.search}
                   onChange={e => setFilters(prev => ({...prev, search: e.target.value}))}
                   className="w-full pl-7 pr-2 py-0.5 bg-white border border-slate-300 rounded text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-500 uppercase tracking-tight"
@@ -271,14 +284,14 @@ const App: React.FC = () => {
             </div>
 
             {/* Estados de Proceso */}
-            <div className="flex items-center gap-2 border-l border-slate-300 pl-4 h-6">
-              <div className="flex items-center gap-1 text-[9px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200 uppercase">OK: {files.filter(f => f.status === 'success').length}</div>
-              <div className="flex items-center gap-1 text-[9px] font-black bg-rose-50 text-rose-700 px-2 py-0.5 rounded border border-rose-200 uppercase">ERR: {files.filter(f => f.status === 'error').length}</div>
+            <div className="flex items-center gap-2 border-l border-slate-300 pl-3 h-6">
+              <div className="flex items-center gap-1 text-[8px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 uppercase">OK: {files.filter(f => f.status === 'success').length}</div>
+              <div className="flex items-center gap-1 text-[8px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 uppercase">ERR: {files.filter(f => f.status === 'error').length}</div>
             </div>
           </div>
 
           <div className="flex-1 overflow-auto custom-scrollbar bg-slate-200">
-            <table className="w-full text-left border-collapse table-fixed min-w-[900px]">
+            <table className="w-full text-left border-collapse table-fixed min-w-[1000px]">
               <thead className="sticky top-0 bg-slate-50 shadow-sm z-10">
                 <tr className="border-b border-slate-300">
                   <th className="w-10 border-r border-slate-200 px-1 py-1 text-[9px] font-black text-slate-400 text-center">#</th>
@@ -377,6 +390,14 @@ const App: React.FC = () => {
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+        
+        /* Ocultar iconos de calendario en Firefox y Chrome para ahorrar espacio */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          padding: 0;
+          margin: 0;
+          cursor: pointer;
+          filter: opacity(0.5);
+        }
       `}</style>
     </div>
   );
