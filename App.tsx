@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   FolderOpen, 
   Play, 
@@ -12,14 +12,14 @@ import {
   XCircle,
   Clock,
   ShieldCheck,
-  Info
+  ExternalLink
 } from 'lucide-react';
 import { FileItem, GlobalConfig, FilterState } from './types';
 import { formatBytes, getExtension, getBaseName } from './utils/fileUtils';
 
 const App: React.FC = () => {
-  // Obtener la fecha actual en formato YYYY-MM-DD para los inputs
-  const hoy = new Date().toISOString().split('T')[0];
+  // Obtener la fecha actual local en formato YYYY-MM-DD
+  const hoy = new Date().toLocaleDateString('en-CA'); 
 
   const [sourceHandle, setSourceHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [destHandle, setDestHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -32,53 +32,58 @@ const App: React.FC = () => {
   });
   const [filters, setFilters] = useState<FilterState>({
     search: '',
-    dateStart: hoy, // Fecha actual por defecto
-    dateEnd: hoy,   // Fecha actual por defecto
+    dateStart: hoy, 
+    dateEnd: hoy,   
     minSize: 0
   });
   const [pastedNames, setPastedNames] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [pickerError, setPickerError] = useState<{title: string, msg: string} | null>(null);
 
   // --- Operaciones del Sistema de Archivos ---
 
-  // Seleccionar directorio de origen
   const selectSource = async () => {
     setPickerError(null);
     try {
       if (!('showDirectoryPicker' in window)) {
-        throw new Error("Tu navegador no soporta la API de archivos necesaria.");
+        throw new Error("Navegador incompatible con File System API.");
       }
       const handle = await (window as any).showDirectoryPicker();
       setSourceHandle(handle);
       await scanFiles(handle);
     } catch (err: any) {
       console.error(err);
-      if (err.name === 'SecurityError') {
-        setPickerError("Error de Seguridad: El selector de archivos está bloqueado en este entorno. Prueba a abrir la aplicación en una pestaña nueva o un servidor local.");
-      } else {
-        setPickerError("No se pudo acceder a la carpeta: " + err.message);
+      if (err.name === 'SecurityError' || err.message.includes('Cross origin')) {
+        setPickerError({
+          title: "Restricción de Seguridad",
+          msg: "El navegador bloquea el acceso a archivos desde un marco (iframe). Por favor, abre esta aplicación en una ventana nueva o directamente desde su URL para poder seleccionar carpetas."
+        });
+      } else if (err.name !== 'AbortError') {
+        setPickerError({
+          title: "Error de Acceso",
+          msg: err.message
+        });
       }
     }
   };
 
-  // Seleccionar directorio de destino
   const selectDestination = async () => {
     setPickerError(null);
     try {
       const handle = await (window as any).showDirectoryPicker();
       setDestHandle(handle);
     } catch (err: any) {
-      console.error(err);
-      if (err.name === 'SecurityError') {
-        setPickerError("Error de Seguridad: El entorno bloquea el acceso a archivos.");
+      if (err.name === 'SecurityError' || err.message.includes('Cross origin')) {
+        setPickerError({
+          title: "Restricción de Seguridad",
+          msg: "No se puede abrir el selector en este entorno. Abre la app en una pestaña independiente."
+        });
       }
     }
   };
 
-  // Leer archivos del directorio seleccionado
   const scanFiles = async (handle: FileSystemDirectoryHandle) => {
     const newFiles: FileItem[] = [];
     try {
@@ -105,11 +110,11 @@ const App: React.FC = () => {
       }
       setFiles(newFiles);
     } catch (e: any) {
-      setPickerError("Error al leer archivos: " + e.message);
+      setPickerError({title: "Error de Lectura", msg: e.message});
     }
   };
 
-  // --- Lógica para archivos filtrados ---
+  // --- Lógica de Filtros ---
 
   const filteredFiles = useMemo(() => {
     return files.filter(f => {
@@ -117,7 +122,6 @@ const App: React.FC = () => {
       const matchesSize = f.size >= filters.minSize * 1024;
       
       const fileDate = new Date(f.lastModified);
-      // Ajustar fechas de filtro para comparación
       const start = filters.dateStart ? new Date(filters.dateStart + 'T00:00:00') : null;
       const end = filters.dateEnd ? new Date(filters.dateEnd + 'T23:59:59') : null;
       
@@ -129,7 +133,6 @@ const App: React.FC = () => {
 
   // --- Operaciones Masivas ---
 
-  // Aplicar nombres desde una lista pegada (mapeo uno a uno)
   const applyPastedNames = () => {
     const names = pastedNames.split('\n').filter(n => n.trim() !== '');
     setFiles(prev => prev.map((f) => {
@@ -141,15 +144,14 @@ const App: React.FC = () => {
     }));
   };
 
-  // Construir el nombre final
   const getFinalName = (f: FileItem) => {
     const prefix = f.prefix || globalConfig.prefix;
     const suffix = f.suffix || globalConfig.suffix;
     const ext = f.extension || globalConfig.extension || getExtension(f.originalName);
-    return `${prefix}${f.customBaseName}${suffix}${ext ? '.' + ext : ''}`;
+    const dot = (ext && !ext.startsWith('.')) ? '.' : '';
+    return `${prefix}${f.customBaseName}${suffix}${dot}${ext}`;
   };
 
-  // Ejecutar el proceso
   const executeBatch = async () => {
     if (!destHandle) return;
     setIsProcessing(true);
@@ -227,13 +229,24 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Alerta de Error de Selector */}
+      {/* Alerta de Error de Seguridad / Selector */}
       {pickerError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-          <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-          <div className="text-sm">
-            <p className="font-bold">Aviso del Sistema</p>
-            <p>{pickerError}</p>
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-5 py-4 rounded-2xl flex items-start gap-4 animate-in fade-in slide-in-from-top-2">
+          <AlertTriangle className="w-6 h-6 mt-0.5 flex-shrink-0 text-amber-600" />
+          <div className="text-sm space-y-2">
+            <p className="font-bold text-base">{pickerError.title}</p>
+            <p className="leading-relaxed">{pickerError.msg}</p>
+            {pickerError.title === "Restricción de Seguridad" && (
+              <div className="pt-2">
+                 <button 
+                  onClick={() => window.open(window.location.href, '_blank')}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Abrir en pestaña nueva
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -243,31 +256,31 @@ const App: React.FC = () => {
         {/* Controles Laterales */}
         <aside className="lg:col-span-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
           
-          {/* Configuración por Lote en una sola línea vertical/horizontal combinada */}
+          {/* Configuración por Lote en una sola línea */}
           <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
             <h2 className="font-bold flex items-center gap-2 text-slate-800">
               <RefreshCw className="w-4 h-4 text-indigo-500" />
               Configuración por Lote
             </h2>
             <div className="flex flex-wrap gap-2 items-end">
-              <div className="flex-1 min-w-[60px]">
+              <div className="flex-1 min-w-[50px]">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Prefijo</label>
                 <input 
                   type="text" 
                   value={globalConfig.prefix}
                   onChange={e => setGlobalConfig(prev => ({...prev, prefix: e.target.value}))}
                   className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="IMG_"
+                  placeholder="ej. IMG_"
                 />
               </div>
-              <div className="flex-1 min-w-[60px]">
+              <div className="flex-1 min-w-[50px]">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Sufijo</label>
                 <input 
                   type="text" 
                   value={globalConfig.suffix}
                   onChange={e => setGlobalConfig(prev => ({...prev, suffix: e.target.value}))}
                   className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="_2024"
+                  placeholder="ej. _2024"
                 />
               </div>
               <div className="w-16">
@@ -277,7 +290,7 @@ const App: React.FC = () => {
                   value={globalConfig.extension}
                   onChange={e => setGlobalConfig(prev => ({...prev, extension: e.target.value.replace('.', '')}))}
                   className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder=".jpg"
+                  placeholder="jpg"
                 />
               </div>
             </div>
@@ -308,7 +321,7 @@ const App: React.FC = () => {
               onClick={applyPastedNames}
               className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all border border-slate-200"
             >
-              Asignar Nombres
+              Asignar Nombres a la Lista
             </button>
           </section>
 
