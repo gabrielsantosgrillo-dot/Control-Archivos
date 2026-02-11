@@ -16,7 +16,11 @@ import {
   ArrowUpDown,
   Search,
   Hash,
-  Calendar
+  Calendar,
+  Replace,
+  Monitor,
+  Smartphone,
+  AlertCircle
 } from 'lucide-react';
 import { FileItem, GlobalConfig, FilterState, SortType } from './types';
 import { formatBytes, getExtension, getBaseName } from './utils/fileUtils';
@@ -31,7 +35,9 @@ const App: React.FC = () => {
     prefix: '',
     suffix: '',
     extension: '',
-    overwrite: false
+    overwrite: false,
+    find: '',
+    replace: ''
   });
   const [filters, setFilters] = useState<FilterState>({
     search: '',
@@ -45,6 +51,7 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showCompatibility, setShowCompatibility] = useState(false);
   const [pickerError, setPickerError] = useState<{title: string, msg: string} | null>(null);
 
   const selectSource = async () => {
@@ -57,6 +64,8 @@ const App: React.FC = () => {
     } catch (err: any) {
       if (err.name === 'SecurityError' || err.message.includes('Cross origin')) {
         setPickerError({ title: "Seguridad", msg: "Abre la app en pestaña nueva para acceder a archivos." });
+      } else if (!('showDirectoryPicker' in window)) {
+        setShowCompatibility(true);
       }
     }
   };
@@ -65,7 +74,9 @@ const App: React.FC = () => {
     try {
       const handle = await (window as any).showDirectoryPicker();
       setDestHandle(handle);
-    } catch (e) {}
+    } catch (e) {
+      if (!('showDirectoryPicker' in window)) setShowCompatibility(true);
+    }
   };
 
   const scanFiles = async (handle: FileSystemDirectoryHandle) => {
@@ -133,8 +144,14 @@ const App: React.FC = () => {
     const prefix = f.prefix || globalConfig.prefix;
     const suffix = f.suffix || globalConfig.suffix;
     const ext = f.extension || globalConfig.extension || getExtension(f.originalName);
+    
+    let base = f.customBaseName;
+    if (globalConfig.find !== '') {
+      base = base.split(globalConfig.find).join(globalConfig.replace);
+    }
+    
     const dot = (ext && !ext.startsWith('.')) ? '.' : '';
-    return `${prefix}${f.customBaseName}${suffix}${dot}${ext}`;
+    return `${prefix}${base}${suffix}${dot}${ext}`;
   };
 
   const executeBatch = async () => {
@@ -190,13 +207,35 @@ const App: React.FC = () => {
           <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
             <h2 className="text-[10px] font-black flex items-center gap-2 text-slate-400 uppercase tracking-widest border-b pb-2"><RefreshCw className="w-3 h-3" /> Configuración Global</h2>
             <div className="space-y-2">
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase">Prefijo</label>
-                <input type="text" value={globalConfig.prefix} onChange={e => setGlobalConfig(prev => ({...prev, prefix: e.target.value}))} className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Prefijo..." />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">Prefijo</label>
+                  <input type="text" value={globalConfig.prefix} onChange={e => setGlobalConfig(prev => ({...prev, prefix: e.target.value}))} className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" placeholder="IMG_" />
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase">Sufijo</label>
+                  <input type="text" value={globalConfig.suffix} onChange={e => setGlobalConfig(prev => ({...prev, suffix: e.target.value}))} className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" placeholder="_V1" />
+                </div>
               </div>
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase">Sufijo</label>
-                <input type="text" value={globalConfig.suffix} onChange={e => setGlobalConfig(prev => ({...prev, suffix: e.target.value}))} className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Sufijo..." />
+              
+              <div className="pt-2 space-y-2 border-t border-slate-100">
+                 <div className="flex items-center gap-1 text-[9px] font-black text-indigo-400 uppercase tracking-widest"><Replace className="w-2.5 h-2.5" /> Sustituir</div>
+                 <div className="grid grid-cols-1 gap-1.5">
+                    <input 
+                      type="text" 
+                      value={globalConfig.find} 
+                      onChange={e => setGlobalConfig(prev => ({...prev, find: e.target.value}))} 
+                      className="w-full px-2 py-1 bg-indigo-50/50 border border-indigo-100 rounded text-[10px] outline-none focus:ring-1 focus:ring-indigo-500 font-medium" 
+                      placeholder="Buscar..." 
+                    />
+                    <input 
+                      type="text" 
+                      value={globalConfig.replace} 
+                      onChange={e => setGlobalConfig(prev => ({...prev, replace: e.target.value}))} 
+                      className="w-full px-2 py-1 bg-emerald-50/50 border border-emerald-100 rounded text-[10px] outline-none focus:ring-1 focus:ring-emerald-500 font-medium" 
+                      placeholder="Reemplazar por..." 
+                    />
+                 </div>
               </div>
             </div>
             <label className="flex items-center gap-2 cursor-pointer pt-1"><input type="checkbox" checked={globalConfig.overwrite} onChange={e => setGlobalConfig(prev => ({...prev, overwrite: e.target.checked}))} className="w-3 h-3 rounded border-slate-300 text-indigo-600" /><span className="text-[11px] font-medium text-slate-600">Sobrescribir</span></label>
@@ -210,9 +249,7 @@ const App: React.FC = () => {
         </aside>
 
         <main className="lg:col-span-4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          {/* BARRA DE HERRAMIENTAS DE TABLA INTEGRADA - POTENCIADA */}
           <div className="px-3 py-1.5 border-b border-slate-300 bg-slate-100 flex flex-wrap items-center gap-3">
-            {/* Contadores */}
             <div className="flex items-center gap-1 border-r border-slate-300 pr-3 h-6">
               <span className="text-[9px] font-black text-slate-400 uppercase">Ficheros:</span>
               <span className="text-[11px] font-mono font-bold text-indigo-700 leading-none">{filteredFiles.length}</span>
@@ -220,7 +257,6 @@ const App: React.FC = () => {
               <span className="text-[11px] font-mono font-medium text-slate-400 leading-none">{files.length}</span>
             </div>
 
-            {/* Límite */}
             <div className="flex items-center gap-2 border-r border-slate-300 pr-3 h-6">
               <label className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><Hash className="w-3 h-3" /> Límite:</label>
               <input 
@@ -232,7 +268,6 @@ const App: React.FC = () => {
               />
             </div>
 
-            {/* Ordenación */}
             <div className="flex items-center gap-2 border-r border-slate-300 pr-3 h-6">
               <label className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><ArrowUpDown className="w-3 h-3" /> Orden:</label>
               <select 
@@ -249,7 +284,6 @@ const App: React.FC = () => {
               </select>
             </div>
 
-            {/* Rango de Fechas Integrado */}
             <div className="flex items-center gap-2 border-r border-slate-300 pr-3 h-6">
               <label className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1"><Calendar className="w-3 h-3" /> Fecha:</label>
               <div className="flex items-center bg-white border border-slate-300 rounded overflow-hidden">
@@ -269,7 +303,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Filtro Búsqueda */}
             <div className="flex items-center gap-2 flex-1 min-w-[120px]">
               <div className="relative w-full">
                 <Search className="w-3 h-3 absolute left-2 top-1.5 text-slate-400" />
@@ -283,7 +316,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Estados de Proceso */}
             <div className="flex items-center gap-2 border-l border-slate-300 pl-3 h-6">
               <div className="flex items-center gap-1 text-[8px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 uppercase">OK: {files.filter(f => f.status === 'success').length}</div>
               <div className="flex items-center gap-1 text-[8px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200 uppercase">ERR: {files.filter(f => f.status === 'error').length}</div>
@@ -342,17 +374,17 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-200 flex justify-between items-center bg-white rounded-lg shadow-sm">
-        <p>Copyright © 2024 <span className="font-black text-slate-500 uppercase tracking-tighter">Gabriel Santos Grillo</span></p>
+      <footer className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-200 flex flex-wrap justify-between items-center bg-white rounded-lg shadow-sm gap-4">
+        <p>Creado por <span className="font-black text-slate-500 uppercase tracking-tighter">Gabriel Santos Grillo - 2026</span></p>
         <div className="flex gap-4">
-          <span className="text-[9px] font-mono">Precision: MM:SS Enabled</span>
+          <button onClick={() => setShowCompatibility(true)} className="hover:text-amber-600 font-black uppercase tracking-widest flex items-center gap-1 transition-colors"><Monitor className="w-3 h-3" /> Compatibilidad</button>
           <button onClick={() => setShowPrivacy(true)} className="hover:text-indigo-600 font-black uppercase tracking-widest flex items-center gap-1 transition-colors"><ShieldCheck className="w-3 h-3" /> Privacidad</button>
         </div>
       </footer>
 
       {showConfirm && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 border border-slate-200">
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-500" /> Confirmar Proceso</h3>
             <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 font-medium">
               Se procesarán <b className="text-indigo-600">{filteredFiles.length}</b> ficheros seleccionados hacia el destino.
@@ -367,10 +399,53 @@ const App: React.FC = () => {
 
       {showPrivacy && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-8 space-y-4">
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest border-b pb-2">Privacidad de Datos Local</h3>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-8 space-y-4 border border-slate-200">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest border-b pb-2 flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-indigo-600" /> Privacidad de Datos Local</h3>
             <p className="text-[11px] text-slate-600 leading-relaxed italic">Esta herramienta procesa los archivos íntegramente en tu navegador. Los nombres, rutas y contenidos nunca abandonan tu ordenador ni se envían a ningún servidor externo. Gabriel Santos Grillo no tiene acceso a tus datos.</p>
-            <button onClick={() => setShowPrivacy(false)} className="w-full py-2 bg-slate-100 rounded-lg font-bold text-xs">CERRAR</button>
+            <button onClick={() => setShowPrivacy(false)} className="w-full py-2 bg-slate-100 rounded-lg font-bold text-xs hover:bg-slate-200 transition-colors">CERRAR</button>
+          </div>
+        </div>
+      )}
+
+      {showCompatibility && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-8 space-y-6 border border-slate-200">
+            <div className="space-y-2">
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest border-b pb-2 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-amber-500" /> Compatibilidad y Restricciones</h3>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Esta aplicación utiliza la tecnología <strong>File System Access API</strong> para permitir el acceso directo a carpetas de tu ordenador. Por motivos de seguridad y arquitectura, existen limitaciones importantes de compatibilidad:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs"><Monitor className="w-4 h-4" /> Sistemas Soportados</div>
+                <ul className="text-[10px] text-emerald-700 space-y-1 font-medium">
+                  <li>• Windows (Chrome, Edge, Opera)</li>
+                  <li>• macOS (Chrome, Edge, Opera)</li>
+                  <li>• Linux (Chrome, Edge)</li>
+                  <li>• ChromeOS (Nativo)</li>
+                </ul>
+              </div>
+
+              <div className="bg-rose-50 p-4 rounded-xl border border-rose-100 space-y-2">
+                <div className="flex items-center gap-2 text-rose-800 font-bold text-xs"><Smartphone className="w-4 h-4" /> No Soportados</div>
+                <ul className="text-[10px] text-rose-700 space-y-1 font-medium">
+                  <li>• Android (Todos los navegadores)</li>
+                  <li>• iPhone / iPad (iOS / iPadOS)</li>
+                  <li>• Navegador Safari (Mac/iOS)</li>
+                  <li>• Firefox (Soporte limitado de API)</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+              <p className="text-[10px] text-slate-500 italic leading-snug">
+                <strong>Nota Técnica:</strong> Los sistemas operativos móviles utilizan "sandboxing" estricto que impide que las aplicaciones web seleccionen directorios completos para lectura y escritura masiva. Para un funcionamiento óptimo, utiliza un ordenador de escritorio.
+              </p>
+            </div>
+
+            <button onClick={() => setShowCompatibility(false)} className="w-full py-2 bg-slate-800 text-white rounded-lg font-bold text-xs hover:bg-slate-900 transition-colors uppercase tracking-widest">Entendido</button>
           </div>
         </div>
       )}
@@ -391,7 +466,6 @@ const App: React.FC = () => {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 1; }
         
-        /* Ocultar iconos de calendario en Firefox y Chrome para ahorrar espacio */
         input[type="date"]::-webkit-calendar-picker-indicator {
           padding: 0;
           margin: 0;

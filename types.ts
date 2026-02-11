@@ -24,6 +24,8 @@ export interface GlobalConfig {
   suffix: string;
   extension: string;
   overwrite: boolean;
+  find: string;
+  replace: string;
 }
 
 export interface FilterState {
